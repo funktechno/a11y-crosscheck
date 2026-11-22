@@ -1,10 +1,10 @@
 name: tests
 
+# Pull requests, and by hand: Actions > tests > Run workflow, which asks for the branch to run on.
+# Nothing runs on a push to main: a change reaches it through a pull request that already passed.
 on:
-  push:
-    branches: [main]
   pull_request:
-  workflow_dispatch:          # the "Run workflow" button in the Actions tab
+  workflow_dispatch:
 
 # Workflow-level only. A job-level permissions block REPLACES this one (every scope left out
 # becomes none), and the test reporter then 403s reading the PR.
