@@ -92,7 +92,9 @@ jobs:
           node-version: 22.x
           cache: npm
       - run: npm ci              # builds dist/; installing downloads no browser (.puppeteerrc.cjs)
-      - run: npm run browser:install   # resolves a browser as a first scan does: the runner's Chrome, else a download
+      # A pinned Chrome in the tool's own cache, which a scan prefers over the runner's system Chromium
+      # (a slow cold start there once outlasted the wait for its DevTools endpoint).
+      - run: npx --yes @puppeteer/browsers install chrome@stable --path .cache/puppeteer
       - run: npm run test:e2e:ci   # builds, then runs the demo through bin/
       - uses: actions/upload-artifact@v7
         if: success() || failure()
