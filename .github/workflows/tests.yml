@@ -47,6 +47,7 @@ jobs:
       - name: Pack and install the package
         if: matrix.node == '24.x'
         run: |
+          mkdir -p "$RUNNER_TEMP/pack"
           npm pack --pack-destination "$RUNNER_TEMP/pack"
           npm install -g "$RUNNER_TEMP"/pack/a11y-crosscheck-*.tgz
           a11y-crosscheck --help
