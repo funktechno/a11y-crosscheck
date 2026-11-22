@@ -39,6 +39,8 @@ jobs:
       - run: npm run typecheck   # src, tests, the type fixture, and the example configs against the shipped types
       - run: npm run check:package   # publint and arethetypeswrong on the packed tarball
       - run: npm run test:ci
+      # The report action only counts <testcase>s inside a <testsuite>, which node:test writes for describe() blocks.
+      - run: grep -q '<testsuite ' junit-unit.xml
       - run: mv junit-unit.xml "junit-unit-node${{ matrix.node }}.xml"
         if: success() || failure()
 
@@ -96,6 +98,7 @@ jobs:
       # (a slow cold start there once outlasted the wait for its DevTools endpoint).
       - run: npx --yes @puppeteer/browsers install chrome@stable --path .cache/puppeteer
       - run: npm run test:e2e:ci   # builds, then runs the demo through bin/
+      - run: grep -q '<testsuite ' junit-e2e.xml
       - uses: actions/upload-artifact@v7
         if: success() || failure()
         continue-on-error: true
