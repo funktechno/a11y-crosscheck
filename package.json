@@ -2,8 +2,16 @@
   "name": "a11y-crosscheck",
   "version": "0.1.0",
   "description": "Accessibility scans with three independent engines (axe-core, pa11y, Lighthouse), wired to a real app: SPA readiness, sign-in, themes, viewports and dialogs.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lastlink/a11y-crosscheck.git"
+  },
+  "homepage": "https://github.com/lastlink/a11y-crosscheck#readme",
+  "bugs": {
+    "url": "https://github.com/lastlink/a11y-crosscheck/issues"
+  },
+  "author": "lastlink",
   "type": "module",
-  "private": true,
   "bin": {
     "a11y-crosscheck": "bin/a11y-crosscheck.mjs"
   },
@@ -19,7 +27,14 @@
     "browser:install": "node bin/a11y-crosscheck.mjs --install-browser",
     "demo": "node examples/demo/run.mjs",
     "demo:broken": "node examples/demo/run.mjs --broken",
-    "demo:serve": "node examples/demo/serve.mjs"
+    "demo:serve": "node examples/demo/serve.mjs",
+    "test": "node --test \"test/*.test.mjs\"",
+    "test:e2e": "node --test --test-timeout=900000 \"test/e2e/*.test.mjs\"",
+    "test:ci": "node --test --test-reporter=spec --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination=junit-unit.xml \"test/*.test.mjs\"",
+    "test:e2e:ci": "node --test --test-timeout=900000 --test-reporter=spec --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination=junit-e2e.xml \"test/e2e/*.test.mjs\"",
+    "version:generate": "bash scripts/version/generateVersion.sh",
+    "version:update": "bash scripts/version/updateVersion.sh",
+    "version:reset": "bash scripts/version/resetVersion.sh"
   },
   "keywords": [
     "accessibility",
@@ -36,5 +51,8 @@
     "axe-core": "^4.10.2",
     "lighthouse": "^12.2.1",
     "pa11y": "^10.0.0"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

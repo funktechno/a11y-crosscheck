@@ -1,0 +1,107 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:          # the "Run workflow" button in the Actions tab
+
+# Workflow-level only. A job-level permissions block REPLACES this one (every scope left out
+# becomes none), and the test reporter then 403s reading the PR.
+permissions:
+  checks: write
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Unit tests on the oldest Node the package claims and the newest; packing and versioning once.
+  unit:
+    runs-on: ${{ vars.RUNNER || 'ubuntu-latest' }}   # repo variable RUNNER=self-hosted to switch
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [22.x, 24.x]
+    env:
+      PUPPETEER_SKIP_DOWNLOAD: "true"   # no browser needed here; the e2e job has one
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0       # GitVersion walks the whole history and the tags
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci
+      - run: npm run test:ci
+      - run: mv junit-unit.xml "junit-unit-node${{ matrix.node }}.xml"
+        if: success() || failure()
+
+      # The tarball npm would publish installs globally and its bin starts.
+      - name: Pack and install the package
+        if: matrix.node == '24.x'
+        run: |
+          npm pack
+          npm install -g ./a11y-crosscheck-*.tgz
+          a11y-crosscheck --help
+
+      # The same GitVersion + stamp steps publish.yml runs, so a broken versioning setup shows up
+      # on a PR rather than on release day.
+      - uses: actions/setup-dotnet@v6
+        if: matrix.node == '24.x'
+        with:
+          dotnet-version: 10.0.x
+      - name: Generate and stamp the version
+        if: matrix.node == '24.x'
+        run: |
+          dotnet tool install --global GitVersion.Tool --version 6.8.2
+          bash scripts/version/generateVersion.sh
+          bash scripts/version/updateVersion.sh
+          version="$(node -p "require('./package.json').version")"
+          echo "version: $version" | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "$version" | grep -E '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'
+
+      - uses: actions/upload-artifact@v7
+        if: success() || failure()
+        continue-on-error: true   # a quota failure on the upload never fails a green run
+        with:
+          name: junit-unit-node${{ matrix.node }}
+          path: junit-unit-*.xml
+          retention-days: 1
+
+  # The demo app scanned by all three engines in a real Chromium: clean exits 0, broken exits 1.
+  # This is what catches an axe-core / pa11y / Lighthouse bump that changes results.
+  e2e:
+    runs-on: ${{ vars.RUNNER || 'ubuntu-latest' }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22.x
+          cache: npm
+      - run: npm ci              # puppeteer's install fetches Chromium into .cache (.puppeteerrc.cjs)
+      - run: npm run test:e2e:ci
+      - uses: actions/upload-artifact@v7
+        if: success() || failure()
+        continue-on-error: true
+        with:
+          name: junit-e2e
+          path: junit-e2e.xml
+          retention-days: 1
+
+  report:
+    needs: [unit, e2e]
+    if: success() || failure()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: junit-*
+          merge-multiple: true
+      - uses: EnricoMi/publish-unit-test-result-action@v2
+        with:
+          files: "junit-*.xml"
+          check_name: test report

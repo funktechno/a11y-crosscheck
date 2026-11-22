@@ -29,3 +29,8 @@ Thumbs.db
 
 # local notes and plans, kept out of the repo (same convention as the projects this came from)
 archive/
+
+# versioning (scripts/version) and npm pack output
+version-*.txt
+*.tgz
+junit-*.xml
