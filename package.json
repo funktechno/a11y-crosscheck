@@ -47,6 +47,8 @@
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.examples.json",
     "prepare": "npm run build",
+    "prepack": "node scripts/build/cleanManifest.mjs strip",
+    "postpack": "node scripts/build/cleanManifest.mjs restore",
     "check:package": "publint && attw --pack . --profile esm-only"
   },
   "keywords": [

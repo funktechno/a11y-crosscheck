@@ -51,6 +51,7 @@ jobs:
         run: |
           mkdir -p "$RUNNER_TEMP/pack"
           npm pack --pack-destination "$RUNNER_TEMP/pack"
+          node scripts/tests/checkPacked.mjs "$RUNNER_TEMP"/pack/a11y-crosscheck-*.tgz   # no devDependencies in the manifest, tree untouched
           npm install -g "$RUNNER_TEMP"/pack/a11y-crosscheck-*.tgz
           a11y-crosscheck --help
           node scripts/tests/checkInstalled.mjs "$(npm root -g)/a11y-crosscheck"
