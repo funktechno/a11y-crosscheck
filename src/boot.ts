@@ -3,13 +3,19 @@
  * engines cannot drift apart: the same state planted, the same notion of "rendered".
  */
 
+import type { Plan, ResolvedSession } from "./types.ts";
+
 /**
  * A script that runs at the start of every document on the app's origin, before the app's own
  * scripts: the session's localStorage, then the theme -- exactly as if both had been left there
  * by an earlier visit. Returns null when there is nothing to plant.
  */
-export function bootScript(plan, session, theme) {
-  const parts = [];
+export function bootScript(
+  plan: Pick<Plan, "base" | "themes">,
+  session: ResolvedSession | null,
+  theme: string
+): string | null {
+  const parts: string[] = [];
   if (session && Object.keys(session.localStorage).length) {
     parts.push(`{
       const entries = ${JSON.stringify(session.localStorage)};
@@ -31,7 +37,7 @@ export function bootScript(plan, session, theme) {
  * waits for the root to have children, for every busy indicator to go, and for the body to
  * have text. `ready.check`, when given, replaces all of that with an expression of your own.
  */
-export function readyExpression({ check, root, busy, requireText }) {
+export function readyExpression({ check, root, busy, requireText }: Plan["ready"]): string {
   if (check) return `(() => !!(${check}))()`;
   return `(() => {
     const root = document.querySelector(${JSON.stringify(root)});

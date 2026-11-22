@@ -33,18 +33,43 @@ its placeholder.
 ## Add it to your project
 
 **1. Install it** in one of two ways. Either way your project doesn't depend on it, and your
-project's side is the same: an `a11y.config.mjs` and a `reports/` folder. Node 22 or newer.
+project's side is the same: an `a11y.config.mjs` and a `reports/` folder. Node 22.18 or newer.
 
 | | Install | Run | Pick it when |
 | --- | --- | --- | --- |
-| **Global** (recommended) | `npm install -g git+https://github.com/funktechno/a11y-crosscheck.git` | `a11y-crosscheck` from any project folder | You scan regularly: one install, and one browser download, for every project |
-| **Vendored** | Copy `bin/`, `src/` and `.puppeteerrc.cjs` into your repo (say `scripts/a11y-crosscheck/`), then add `axe-core`, `pa11y` and `lighthouse` to your devDependencies | `node scripts/a11y-crosscheck/bin/a11y-crosscheck.mjs` | You want to change the scanner itself, or not install anything globally |
+| **Global** (recommended) | `npm install -g a11y-crosscheck` plus the engines you want, below | `a11y-crosscheck` from any project folder | You scan regularly: one install, and one browser, for every project |
+| **Vendored** | `npm pack a11y-crosscheck`, unpack the tarball into your repo (say `scripts/a11y-crosscheck/`), then add the engines you want to your devDependencies | `node scripts/a11y-crosscheck/bin/a11y-crosscheck.mjs` | You want to pin or patch the scanner, or not install anything globally |
+
+**The engines are your choice.** Installing the tool installs none of them (and no browser): each
+is an optional peer dependency, installed beside it, and a scan runs the ones that are there.
+
+| Engine | Install | What it adds |
+| --- | --- | --- |
+| axe-core | `npm install -g axe-core` | The broadest rule set, and the only engine that runs the full theme and viewport matrix |
+| pa11y | `npm install -g pa11y` | A second, independent rule engine. It depends on puppeteer, which downloads its own browser at install: set `PUPPETEER_SKIP_DOWNLOAD=true` for that install, because the tool brings its own |
+| Lighthouse | `npm install -g lighthouse` | The 0-100 accessibility score |
+
+```sh
+PUPPETEER_SKIP_DOWNLOAD=true npm install -g a11y-crosscheck axe-core pa11y lighthouse   # all three
+npm install -g a11y-crosscheck axe-core                                                  # just axe
+```
+
+In a project, use `npm install -D` with the same names. With no `--only`, a scan runs every
+engine it can find; asking for one that is missing, or having none, stops with the command to
+install it. Running all three is the point of the tool, so that is what the first line does.
+
+To install straight from git instead of the registry:
+`npm install -g git+https://github.com/funktechno/a11y-crosscheck.git` (it builds on install).
 
 The command always works on the folder it is run from: it reads `./a11y.config.mjs` and writes
 to `./reports/a11y`. The Chromium it needs is kept with the tool, not in your project. With a
 vendored copy, add `scripts/a11y-crosscheck/.cache/` to your `.gitignore`.
 
-**2. Write `a11y.config.mjs`** at your project root. Start from whichever example is closest:
+The package is TypeScript and ships its types. A config can `import { defineConfig } from
+"a11y-crosscheck"` even with a global install, and a script can `import { loadPlan, scan }` from
+it; see [Typed config](docs/wiring.md#typed-config).
+
+**2. Write `a11y.config.mjs`** (or `.mts`) at your project root. Start from whichever example is closest:
 
 | Example | Shape of app |
 | --- | --- |
@@ -82,7 +107,7 @@ npm run a11y -- --login=user:pass        # or set A11Y_USER / A11Y_PASS
 ## Commands
 
 ```sh
-a11y-crosscheck                                   # all three engines, every page in the config
+a11y-crosscheck                                   # every installed engine, every page in the config
 a11y-crosscheck --only=axe --login=user:pass      # the gate, signed in
 a11y-crosscheck --pages=/app/,/app/about          # narrow to some routes
 a11y-crosscheck --themes=dark --viewports=phone --states=off   # while fixing one thing
@@ -92,10 +117,10 @@ a11y-crosscheck --install-browser                 # fetch Chromium and stop
 
 | Flag | Default | Notes |
 | --- | --- | --- |
-| `--config` | `./a11y.config.mjs` | Optional. Without one, the pages are scanned as they are. |
+| `--config` | `./a11y.config.mjs` (or `.mts`, `.ts`, `.js`) | Optional. Without one, the pages are scanned as they are. |
 | `--url` | config `baseUrl` | Full base URL. Overrides `--port`. |
 | `--port` | — | Shorthand for `http://localhost:<port>`. |
-| `--only` | all three | Comma-separated: `axe`, `pa11y`, `lighthouse`. |
+| `--only` | every installed engine | Comma-separated: `axe`, `pa11y`, `lighthouse`. An engine that is not installed is an error naming what to install. |
 | `--pages` | config `pages` | Comma-separated paths, each appended to the base URL. |
 | `--themes` | config `themes.values` | axe only. |
 | `--viewports` | `desktop,phone` | Names from the config's `viewports`. axe only. |
@@ -149,11 +174,25 @@ pa11y and Lighthouse drive Chromium through puppeteer, and **puppeteer cannot la
 Windows**: `msedge.exe` forks and exits, so puppeteer's process handle dies and it reports
 `Failed to launch the browser process` with no further detail. A real Chromium is required.
 
-The scanner looks for one in this order: `CHROME_PATH`, then the tool's own
-`.cache/puppeteer` (set `A11Y_BROWSER_CACHE` to use a different folder), then a system
-Chrome/Chromium. If it finds none, it downloads one into that cache on the first run. It never
-uses Edge. [.puppeteerrc.cjs](.puppeteerrc.cjs) sends puppeteer's own install-time download to
-the same cache, so in practice the browser is already there after `npm install`.
+**Installing the tool downloads no browser.** The scanner looks for one when it runs, in this
+order:
+
+1. `CHROME_PATH`
+2. the tool's own `.cache/puppeteer` (set `A11Y_BROWSER_CACHE` to use a different folder)
+3. puppeteer's default cache, `~/.cache/puppeteer` (or `PUPPETEER_CACHE_DIR`), where a project's
+   own puppeteer install may already have put one
+4. a system Chrome or Chromium
+
+It never uses Edge. If it finds none, it downloads Chromium (about 150 MB) into the tool's cache
+on the first scan, and says so. To fetch it ahead of time instead, run
+`a11y-crosscheck --install-browser`; to never download, set `CHROME_PATH` or install Chrome.
+
+**In a project that installs the package as a dev dependency**, puppeteer (a dependency of
+pa11y) may still download its own browser during `npm install`, because npm flattens the
+dependencies and puppeteer cannot see this package's [.puppeteerrc.cjs](.puppeteerrc.cjs). To
+skip it, set `PUPPETEER_SKIP_DOWNLOAD=true` for the install, or `puppeteer_skip_download=true` in
+the project's `.npmrc`; the tool then uses whichever browser the list above finds. A global
+install is not affected: it downloads nothing at install time.
 
 ## What no scanner covers
 

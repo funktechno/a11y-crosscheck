@@ -31,6 +31,7 @@ flag) and returns one. Use the function form when a flag should change what is s
 - [Screens behind a click](#screens-behind-a-click)
 - [Rule sets](#rule-sets)
 - [Acknowledged findings](#acknowledged-findings)
+- [Typed config](#typed-config)
 
 ## Which pages
 
@@ -243,3 +244,46 @@ acknowledged: [
 For axe's "needs review" items, after a person has checked them. They never fail a scan; the
 list exists so that a new one stands out. What earns an entry, and how narrow it should be, is
 in [reading-results.md](reading-results.md#needs-review-and-acknowledgements).
+
+## Typed config
+
+The package ships its types, so an editor can complete and check every field above. Three ways
+to use them, from lightest:
+
+```js
+// a11y.config.mjs -- types only; nothing is imported at run time
+/** @type {import("a11y-crosscheck").ConfigFactory} */
+export default ({ args }) => ({ pages: ["/"] });
+```
+
+```js
+// a11y.config.mjs -- defineConfig returns what it is given; it only types it
+import { defineConfig } from "a11y-crosscheck";
+export default defineConfig(({ args }) => ({ pages: ["/"] }));
+```
+
+```ts
+// a11y.config.mts (or .ts) -- Node strips the types itself, no build step
+import { defineConfig } from "a11y-crosscheck";
+export default defineConfig({ baseUrl: "http://localhost:5173", pages: ["/"] });
+```
+
+**With a global install the import still works.** `a11y-crosscheck` is not in your project's
+`node_modules`, so while it loads your config the command makes that one import resolve to the
+copy that is running. A copy installed in the project takes precedence.
+
+**What the editor sees** is another matter: it resolves the package the way TypeScript does, so
+types, and autocomplete, appear only where the package is installed. Add it as a dev dependency
+of the project for that (`npm i -D a11y-crosscheck`); running scans still uses whichever copy the
+command comes from.
+
+`.mts` and `.ts` configs need Node 22.18 or newer. Prefer `.mts` in a project without
+`"type": "module"`: Node then does not have to guess the module type.
+
+The same package can be imported from a script:
+
+```js
+import { loadPlan, scan } from "a11y-crosscheck";
+
+const exitCode = await scan(await loadPlan(["--only=axe", "--url=http://localhost:5173"]));
+```

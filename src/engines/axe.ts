@@ -7,14 +7,19 @@
  */
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
-import { launchCdp, Cdp } from "../cdp.mjs";
-import { classifyIncomplete } from "../acknowledge.mjs";
-import { bootScript } from "../boot.mjs";
+import { launchCdp, Cdp } from "../cdp.ts";
+import { classifyIncomplete } from "../acknowledge.ts";
+import { bootScript } from "../boot.ts";
+import type { AxeOptions, AxeRunResult, Plan, ResolvedSession, Step } from "../types.ts";
 
 const require = createRequire(import.meta.url);
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-export async function runAxe(plan, browser, session) {
+export async function runAxe(
+  plan: Plan,
+  browser: string,
+  session: ResolvedSession | null
+): Promise<Record<string, AxeRunResult>> {
   const axeSource = readFileSync(require.resolve("axe-core/axe.min.js"), "utf8");
   const { proc, wsUrl } = await launchCdp(browser);
   const cdp = await Cdp.connect(wsUrl, plan.ready);
@@ -26,7 +31,12 @@ export async function runAxe(plan, browser, session) {
   }
 }
 
-async function scanAll(cdp, plan, session, axeSource) {
+async function scanAll(
+  cdp: Cdp,
+  plan: Plan,
+  session: ResolvedSession | null,
+  axeSource: string
+): Promise<Record<string, AxeRunResult>> {
   const { base } = plan;
   const origin = new URL(base).origin;
   await cdp.send("Page.enable");
@@ -57,8 +67,8 @@ async function scanAll(cdp, plan, session, axeSource) {
     }
   }
 
-  const out = {};
-  let bootScriptId = null;
+  const out: Record<string, AxeRunResult> = {};
+  let bootScriptId: string | null = null;
   for (const run of plan.runs) {
     const viewport = plan.viewports[run.viewport];
     await cdp.send("Emulation.setDeviceMetricsOverride", { ...viewport, deviceScaleFactor: 1 });
@@ -76,9 +86,10 @@ async function scanAll(cdp, plan, session, axeSource) {
     }
     const source = bootScript(plan, session, run.theme);
     if (source) {
-      ({ identifier: bootScriptId } = await cdp.send("Page.addScriptToEvaluateOnNewDocument", {
-        source
-      }));
+      ({ identifier: bootScriptId } = await cdp.send<{ identifier: string }>(
+        "Page.addScriptToEvaluateOnNewDocument",
+        { source }
+      ));
     }
 
     const rendered = await cdp.goto(base + run.page);
@@ -101,8 +112,12 @@ async function scanAll(cdp, plan, session, axeSource) {
     }
 
     await cdp.eval(axeSource);
-    const raw = await cdp.eval(axeExpression(plan.axe));
-    const result = classifyIncomplete(plan.acknowledged, run.page, JSON.parse(raw));
+    const raw = await cdp.eval<string>(axeExpression(plan.axe));
+    const result = classifyIncomplete(
+      plan.acknowledged,
+      run.page,
+      JSON.parse(raw) as Pick<AxeRunResult, "violations" | "incomplete">
+    );
     // Not a failure -- some pages legitimately never match the ready check -- but a row that
     // may have been audited mid-skeleton should say so.
     if (!rendered) result.notReady = true;
@@ -112,7 +127,7 @@ async function scanAll(cdp, plan, session, axeSource) {
 }
 
 /** Runs a state's click/waitFor steps; returns why it failed, or null. */
-async function walkSteps(cdp, steps) {
+async function walkSteps(cdp: Cdp, steps: Step[]): Promise<string | null> {
   for (const step of steps) {
     if (!(await cdp.click(step.click))) return `nothing clickable matched "${step.click}"`;
     if (step.waitFor && !(await cdp.waitForSelector(step.waitFor))) {
@@ -122,7 +137,7 @@ async function walkSteps(cdp, steps) {
   return null;
 }
 
-function axeExpression({ tags, rules }) {
+function axeExpression({ tags, rules }: Required<AxeOptions>): string {
   return `
     axe.run(document, {
       resultTypes: ['violations', 'incomplete'],

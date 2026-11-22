@@ -22,3 +22,9 @@ npm run version:reset    # before committing
 pwsh scripts/version/generateVersion.ps1; pwsh scripts/version/updateVersion.ps1
 pwsh scripts/version/resetVersion.ps1    # before committing
 ```
+
+## tests
+
+| Script | Platform | Called by | What it does |
+| --- | --- | --- | --- |
+| `checkInstalled.mjs <package folder>` | any | `tests.yml` (pack-and-install step) | Read-only. Imports an installed copy's public API and loads a `.mts` config that imports `defineConfig` from `a11y-crosscheck` with the package not resolvable from the config's folder, as under a global install |

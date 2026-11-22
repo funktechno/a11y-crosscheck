@@ -10,6 +10,8 @@
  * item goes back to being NEW. Re-check it then rather than widening the entry.
  */
 
+import type { Acknowledged, AxeNode, AxeRunResult } from "./types.ts";
+
 /** How many nodes per needs-review rule a report lists (all are counted). */
 const REPORT_NODES = 20;
 
@@ -22,7 +24,12 @@ const REPORT_NODES = 20;
  * one page: a css path is not stable, because axe emits the shortest *unique* selector, so the
  * same component is reported under a different one on every page it appears on.
  */
-export const isAcknowledged = (acknowledged, page, ruleId, node) =>
+export const isAcknowledged = (
+  acknowledged: Acknowledged[],
+  page: string,
+  ruleId: string,
+  node: Pick<AxeNode, "target" | "html" | "reason">
+): boolean =>
   acknowledged.some(
     (a) =>
       a.rule === ruleId &&
@@ -34,7 +41,7 @@ export const isAcknowledged = (acknowledged, page, ruleId, node) =>
   );
 
 /** Entries with neither `html` nor `targets` would silence a whole rule; refuse them up front. */
-export function validateAcknowledged(acknowledged) {
+export function validateAcknowledged(acknowledged: Acknowledged[]): void {
   const bad = acknowledged.filter((a) => !a.rule || (!a.html && !a.targets));
   if (bad.length) {
     throw new Error(
@@ -45,7 +52,11 @@ export function validateAcknowledged(acknowledged) {
 }
 
 /** Tag every incomplete node as acknowledged or new, and count both per run. */
-export function classifyIncomplete(acknowledged, page, r) {
+export function classifyIncomplete(
+  acknowledged: Acknowledged[],
+  page: string,
+  r: Pick<AxeRunResult, "incomplete"> & Partial<AxeRunResult>
+): AxeRunResult {
   let known = 0,
     fresh = 0;
   for (const v of r.incomplete) {
@@ -68,7 +79,5 @@ export function classifyIncomplete(acknowledged, page, r) {
     // new nodes that did not fit in the listing -- still counted, still flagged in the report
     v.unlisted = Math.max(0, freshNodes.length - REPORT_NODES);
   }
-  r.incompleteAcknowledged = known;
-  r.incompleteNew = fresh;
-  return r;
+  return { violations: [], ...r, incompleteAcknowledged: known, incompleteNew: fresh };
 }

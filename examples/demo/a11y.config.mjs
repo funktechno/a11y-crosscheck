@@ -2,7 +2,9 @@
  * The demo app's wiring. Every block here is one of the questions docs/wiring.md walks
  * through, answered for examples/demo/site -- read the two side by side.
  */
-export default () => ({
+import { defineConfig } from "a11y-crosscheck";
+
+export default defineConfig(() => ({
   baseUrl: "http://localhost:4173",
 
   // Every route the app has. The client renders all of them from the same index.html.
@@ -26,7 +28,7 @@ export default () => ({
         body: JSON.stringify({ user, pass })
       });
       if (!res.ok) throw new Error(`sign-in failed: ${res.status}`);
-      const { token } = await res.json();
+      const { token } = /** @type {{ token: string }} */ (await res.json());
       return { cookies: [{ name: "demo-session", value: token }] };
     }
   },
@@ -42,4 +44,4 @@ export default () => ({
 
   // Nothing yet. A needs-review item checked by hand goes here -- see docs/reading-results.md.
   acknowledged: []
-});
+}));

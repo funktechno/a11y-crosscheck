@@ -35,18 +35,26 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
           cache: npm
-      - run: npm ci
+      - run: npm ci              # also builds dist/ (the package's `prepare` script)
+      - run: npm run typecheck   # src, tests, the type fixture, and the example configs against the shipped types
+      - run: npm run check:package   # publint and arethetypeswrong on the packed tarball
       - run: npm run test:ci
       - run: mv junit-unit.xml "junit-unit-node${{ matrix.node }}.xml"
         if: success() || failure()
 
-      # The tarball npm would publish installs globally and its bin starts.
+      # The tarball npm would publish installs globally, its bin starts, and a config outside
+      # node_modules can import the package by name (the global-install resolve fallback).
       - name: Pack and install the package
         if: matrix.node == '24.x'
         run: |
-          npm pack
-          npm install -g ./a11y-crosscheck-*.tgz
+          npm pack --pack-destination "$RUNNER_TEMP/pack"
+          npm install -g "$RUNNER_TEMP"/pack/a11y-crosscheck-*.tgz
           a11y-crosscheck --help
+          node scripts/tests/checkInstalled.mjs "$(npm root -g)/a11y-crosscheck"
+          # engines are optional peers: with none installed the command says so and exits 2
+          set +e; a11y-crosscheck --pages=/ 2> "$RUNNER_TEMP/err.txt"; code=$?; set -e
+          cat "$RUNNER_TEMP/err.txt"
+          test "$code" = 2 && grep -q "no engines are installed" "$RUNNER_TEMP/err.txt"
 
       # The same GitVersion + stamp steps publish.yml runs, so a broken versioning setup shows up
       # on a PR rather than on release day.
@@ -82,8 +90,9 @@ jobs:
         with:
           node-version: 22.x
           cache: npm
-      - run: npm ci              # puppeteer's install fetches Chromium into .cache (.puppeteerrc.cjs)
-      - run: npm run test:e2e:ci
+      - run: npm ci              # builds dist/; installing downloads no browser (.puppeteerrc.cjs)
+      - run: npm run browser:install   # resolves a browser as a first scan does: the runner's Chrome, else a download
+      - run: npm run test:e2e:ci   # builds, then runs the demo through bin/
       - uses: actions/upload-artifact@v7
         if: success() || failure()
         continue-on-error: true

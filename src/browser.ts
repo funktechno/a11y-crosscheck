@@ -6,15 +6,20 @@
  * process handle dies and it reports "Failed to launch the browser process" with no further
  * detail. A real Chromium is required, and a pinned one also makes results reproducible.
  *
- * Resolution order: CHROME_PATH, then the tool's own cache, then a system Chrome/Chromium.
+ * Resolution order: CHROME_PATH, then the tool's own cache, then puppeteer's default cache (a
+ * browser a project's own puppeteer install already fetched), then a system Chrome/Chromium.
+ * Nothing is downloaded at install time; the download happens here, on the first scan that
+ * finds no browser, or on `--install-browser`.
  *
  * The cache lives with the tool, not with the project being scanned (override with
  * A11Y_BROWSER_CACHE): a global install downloads one browser for every project, a dev
  * dependency keeps it inside node_modules, and the scanned repo gets nothing to gitignore but
- * its reports. .puppeteerrc.cjs points puppeteer's own install-time download at the same place.
+ * its reports. .puppeteerrc.cjs keeps puppeteer's own install-time download off and, where it
+ * is found, points it at the same place.
  */
 import { existsSync, readdirSync } from "node:fs";
 import { spawnSync } from "node:child_process";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -24,6 +29,14 @@ export const TOOL_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url
 export const CACHE = process.env.A11Y_BROWSER_CACHE
   ? path.resolve(process.env.A11Y_BROWSER_CACHE)
   : path.join(TOOL_ROOT, ".cache", "puppeteer");
+
+/**
+ * Where puppeteer itself keeps browsers when nothing configures it. A project that installs this
+ * package (or puppeteer) next to its own deps usually ends up with one here.
+ */
+export const PUPPETEER_DEFAULT_CACHE = process.env.PUPPETEER_CACHE_DIR
+  ? path.resolve(process.env.PUPPETEER_CACHE_DIR)
+  : path.join(os.homedir(), ".cache", "puppeteer");
 
 /** Executable layouts used by Chrome for Testing / Chromium across platforms. */
 const EXE_CANDIDATES = [
@@ -36,14 +49,25 @@ const EXE_CANDIDATES = [
   "chrome-mac/Chromium.app/Contents/MacOS/Chromium"
 ];
 
-/** Look through the local cache for any installed Chromium build. */
-export function findLocalBrowser() {
-  if (!existsSync(CACHE)) return null;
-  const found = [];
-  // cache layout: .cache/puppeteer/<browser>/<platform-buildId>/<exe layout>
-  for (const browser of readdirSync(CACHE)) {
-    const bdir = path.join(CACHE, browser);
-    let builds = [];
+/**
+ * Look through the caches, in order, for an installed Chromium build; the first cache that has
+ * one wins, so the tool's own pinned browser beats whatever puppeteer left in the home folder.
+ */
+export function findLocalBrowser(caches: string[] = [CACHE, PUPPETEER_DEFAULT_CACHE]): string | null {
+  for (const cache of caches) {
+    const hit = findIn(cache);
+    if (hit) return hit;
+  }
+  return null;
+}
+
+function findIn(cache: string): string | null {
+  if (!existsSync(cache)) return null;
+  const found: string[] = [];
+  // cache layout: <cache>/<browser>/<platform-buildId>/<exe layout>
+  for (const browser of readdirSync(cache)) {
+    const bdir = path.join(cache, browser);
+    let builds: string[] = [];
     try {
       builds = readdirSync(bdir);
     } catch {
@@ -56,12 +80,12 @@ export function findLocalBrowser() {
       }
     }
   }
-  // newest build id sorts last lexically for the platform-version naming scheme
-  return found.sort().pop() || null;
+  // Build ids look like win64-156.0.8078.47: compare the numbers as numbers, or 99 outranks 156.
+  return found.sort((a, b) => a.localeCompare(b, undefined, { numeric: true })).pop() || null;
 }
 
 /** Any system Chromium/Chrome, as a last resort. Edge is deliberately excluded. */
-function findSystemChrome() {
+function findSystemChrome(): string | null {
   const candidates = [
     "C:/Program Files/Google/Chrome/Application/chrome.exe",
     "C:/Program Files (x86)/Google/Chrome/Application/chrome.exe",
@@ -79,8 +103,8 @@ function findSystemChrome() {
  * @param {{quiet?: boolean}} [opts]
  * @returns {string} absolute path to a Chromium executable
  */
-export function ensureBrowser(opts = {}) {
-  const log = (m) => {
+export function ensureBrowser(opts: { quiet?: boolean } = {}): string {
+  const log = (m: string) => {
     if (!opts.quiet) console.log(m);
   };
 

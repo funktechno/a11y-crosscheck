@@ -9,17 +9,43 @@
  * different majors).
  */
 import { createRequire } from "node:module";
-import { bootScript, readyExpression } from "./boot.mjs";
+import { bootScript, readyExpression } from "./boot.ts";
+import type { Plan, ResolvedSession } from "./types.ts";
 
 const require = createRequire(import.meta.url);
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-/** `puppeteerFor("pa11y", "puppeteer")` -- the puppeteer that pa11y itself would load. */
-export function puppeteerFor(engine, name) {
-  return createRequire(require.resolve(engine))(name);
+/**
+ * The slice of puppeteer this tool calls. Declared here instead of importing puppeteer's types
+ * because pa11y and Lighthouse each bring their own puppeteer (different majors), and neither is
+ * a dependency of this package.
+ */
+export interface PuppeteerPage {
+  setViewport(viewport: { width: number; height: number; isMobile: boolean; hasTouch: boolean }): Promise<void>;
+  setCookie(...cookies: object[]): Promise<void>;
+  setExtraHTTPHeaders(headers: Record<string, string>): Promise<void>;
+  emulateMediaFeatures(features: { name: string; value: string }[]): Promise<void>;
+  evaluateOnNewDocument(source: string): Promise<unknown>;
+  goto(url: string, options: { waitUntil: string; timeout: number }): Promise<unknown>;
+  waitForFunction(expression: string, options: { timeout: number; polling: number }): Promise<unknown>;
+  close(): Promise<void>;
 }
 
-export function launch(puppeteer, executablePath) {
+export interface PuppeteerBrowser {
+  newPage(): Promise<PuppeteerPage>;
+  close(): Promise<void>;
+}
+
+export interface Puppeteer {
+  launch(options: { executablePath: string; headless: boolean; args: string[] }): Promise<PuppeteerBrowser>;
+}
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** `puppeteerFor("pa11y", "puppeteer")` -- the puppeteer that pa11y itself would load. */
+export function puppeteerFor(engine: string, name: string): Puppeteer {
+  return createRequire(require.resolve(engine))(name) as Puppeteer;
+}
+
+export function launch(puppeteer: Puppeteer, executablePath: string): Promise<PuppeteerBrowser> {
   return puppeteer.launch({
     executablePath,
     headless: true,
@@ -31,7 +57,12 @@ export function launch(puppeteer, executablePath) {
  * Plants the session and the default theme on a fresh page. `viewport` is false for Lighthouse,
  * which applies its own device emulation and would be fighting this one.
  */
-export async function preparePage(page, plan, session, { viewport = true } = {}) {
+export async function preparePage(
+  page: PuppeteerPage,
+  plan: Plan,
+  session: ResolvedSession | null,
+  { viewport = true }: { viewport?: boolean } = {}
+): Promise<void> {
   const theme = plan.themes.values[0];
   if (viewport) {
     const vp = plan.viewports[plan.viewportNames[0]];
@@ -58,7 +89,7 @@ export async function preparePage(page, plan, session, { viewport = true } = {})
 }
 
 /** The puppeteer twin of Cdp.waitForApp: wait for `ready`, then settle. Says whether it got there. */
-export async function waitForApp(page, ready) {
+export async function waitForApp(page: PuppeteerPage, ready: Plan["ready"]): Promise<boolean> {
   const ok = await page
     .waitForFunction(readyExpression(ready), { timeout: ready.timeoutMs, polling: 250 })
     .then(

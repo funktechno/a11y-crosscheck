@@ -13,9 +13,9 @@
  *
  * Any combination. Every engine's browser gets all of it before the app boots.
  */
+import type { Plan, ResolvedSession } from "./types.ts";
 
-/** @returns {Promise<null | {cookies: object[], localStorage: object, headers: object}>} */
-export async function signIn(plan) {
+export async function signIn(plan: Pick<Plan, "login" | "auth" | "base">): Promise<ResolvedSession | null> {
   const { login, auth, base } = plan;
   if (!login.user) return null;
   if (!auth?.signIn) {

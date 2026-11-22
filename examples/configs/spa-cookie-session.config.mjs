@@ -6,9 +6,11 @@
  * Adds its own flag: --doc=/viewer/?path=... points the reader route at a document that
  * exists on the install being scanned.
  */
+import { defineConfig } from "a11y-crosscheck";
+
 const APP = "/app";
 
-export default ({ args }) => {
+export default defineConfig(({ args }) => {
   const viewer = `${APP}${args.doc || "/viewer/?path=/samples/handbook.epub"}`;
 
   return {
@@ -50,7 +52,7 @@ export default ({ args }) => {
           body: JSON.stringify({ user: { user_name: user, password: pass } })
         });
         if (!res.ok) throw new Error(`sign-in failed for "${user}": ${res.status}`);
-        const body = await res.json();
+        const body = /** @type {{ result?: { token?: string }, token?: string }} */ (await res.json());
         const session = body?.result ?? body;
         if (!session?.token) throw new Error("sign-in returned no token; is this the right server?");
         return {
@@ -115,5 +117,4 @@ export default ({ args }) => {
           "is the canvas beneath -- the document's own page, which axe cannot sample."
       }
     ]
-  };
-};
+  };});
