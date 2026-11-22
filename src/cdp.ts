@@ -3,10 +3,9 @@
  * run can plant a session, choose a theme before the app boots, and click its way into dialogs.
  */
 import { spawn, type ChildProcess } from "node:child_process";
-import path from "node:path";
 import { readyExpression } from "./boot.ts";
 import type { Plan } from "./types.ts";
-import { TOOL_ROOT } from "./browser.ts";
+import { PROFILE_DIR } from "./browser.ts";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -34,7 +33,7 @@ export async function launchCdp(
       "--no-default-browser-check",
       "--no-sandbox",
       `--remote-debugging-port=${port}`,
-      `--user-data-dir=${path.join(TOOL_ROOT, ".cache", "a11y-profile")}`,
+      `--user-data-dir=${PROFILE_DIR}`,
       "about:blank"
     ],
     { stdio: "ignore" }

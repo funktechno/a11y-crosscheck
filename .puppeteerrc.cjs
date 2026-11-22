@@ -6,10 +6,10 @@ const path = require("node:path");
  * one itself (CHROME_PATH, its own cache, puppeteer's default cache, a system Chrome) and only
  * downloads one on the first scan that finds none, or on `a11y-crosscheck --install-browser`.
  *
- * pa11y is an optional peer dependency (the engines are installed by the user, beside this
- * package), so this file only matters where pa11y is installed under this package, and in this
- * repo's own development. A global `npm install -g a11y-crosscheck pa11y` hoists puppeteer next to
- * it, out of this file's reach: set PUPPETEER_SKIP_DOWNLOAD=true for that install.
+ * This file is NOT published. pa11y is an optional peer dependency, installed by the user beside
+ * this package, so puppeteer never lands inside the package where it would look for this file; users
+ * set PUPPETEER_SKIP_DOWNLOAD=true instead (README, "The browser"). It serves this repo's own
+ * development and CI, where `npm ci` installs pa11y here.
  *
  * So the install-time download is off, and where it is switched back on (PUPPETEER_SKIP_DOWNLOAD=false)
  * it lands in the tool's own cache, the same place src/browser.ts looks first.

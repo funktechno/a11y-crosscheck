@@ -14,8 +14,8 @@
  * The cache lives with the tool, not with the project being scanned (override with
  * A11Y_BROWSER_CACHE): a global install downloads one browser for every project, a dev
  * dependency keeps it inside node_modules, and the scanned repo gets nothing to gitignore but
- * its reports. .puppeteerrc.cjs keeps puppeteer's own install-time download off and, where it
- * is found, points it at the same place.
+ * its reports. Set A11Y_BROWSER_CACHE to keep the browser and the scan's profile folder outside the
+ * package, e.g. when a global install is not writable or a reinstall should not lose them.
  */
 import { existsSync, readdirSync } from "node:fs";
 import { spawnSync } from "node:child_process";
@@ -29,6 +29,15 @@ export const TOOL_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url
 export const CACHE = process.env.A11Y_BROWSER_CACHE
   ? path.resolve(process.env.A11Y_BROWSER_CACHE)
   : path.join(TOOL_ROOT, ".cache", "puppeteer");
+
+/**
+ * The scan's browser profile (cookies and storage it clears itself, but also the service workers and
+ * caches it must not inherit). It follows A11Y_BROWSER_CACHE, so nothing is written inside a package
+ * that cannot be written to; the dot keeps it from being read as a browser by `findLocalBrowser`.
+ */
+export const PROFILE_DIR = process.env.A11Y_BROWSER_CACHE
+  ? path.join(CACHE, ".a11y-profile")
+  : path.join(TOOL_ROOT, ".cache", "a11y-profile");
 
 /**
  * Where puppeteer itself keeps browsers when nothing configures it. A project that installs this
@@ -66,6 +75,7 @@ function findIn(cache: string): string | null {
   const found: string[] = [];
   // cache layout: <cache>/<browser>/<platform-buildId>/<exe layout>
   for (const browser of readdirSync(cache)) {
+    if (browser.startsWith(".")) continue; // the scan profile, not a browser
     const bdir = path.join(cache, browser);
     let builds: string[] = [];
     try {

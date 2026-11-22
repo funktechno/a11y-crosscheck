@@ -23,8 +23,8 @@ npm run demo          # starts a small demo SPA, scans it signed in: clean, exit
 npm run demo:broken   # the same app with deliberate failures: a dirty report, exit 1
 ```
 
-Then open `reports/a11y/summary-*.html`. The demo lives in [examples/demo](examples/demo) and
-its wiring in [examples/demo/a11y.config.mjs](examples/demo/a11y.config.mjs) — read the two
+Then open `reports/a11y/summary-*.html`. The demo lives in [examples/demo](https://github.com/funktechno/a11y-crosscheck/tree/main/examples/demo) and
+its wiring in [examples/demo/a11y.config.mjs](https://github.com/funktechno/a11y-crosscheck/blob/main/examples/demo/a11y.config.mjs) — read the two
 together. The broken run is worth a look: the faint text fails in the light theme only, the
 dialog has three failures that do not exist on first paint, the image without `alt` sits on a
 page only a signed-in scan reaches, and axe and pa11y disagree about an input labelled only by
@@ -178,7 +178,8 @@ Windows**: `msedge.exe` forks and exits, so puppeteer's process handle dies and 
 order:
 
 1. `CHROME_PATH`
-2. the tool's own `.cache/puppeteer` (set `A11Y_BROWSER_CACHE` to use a different folder)
+2. the tool's own cache: `.cache/puppeteer` inside the installed package, or the folder named by
+   `A11Y_BROWSER_CACHE`
 3. puppeteer's default cache, `~/.cache/puppeteer` (or `PUPPETEER_CACHE_DIR`), where a project's
    own puppeteer install may already have put one
 4. a system Chrome or Chromium
@@ -187,12 +188,28 @@ It never uses Edge. If it finds none, it downloads Chromium (about 150 MB) into 
 on the first scan, and says so. To fetch it ahead of time instead, run
 `a11y-crosscheck --install-browser`; to never download, set `CHROME_PATH` or install Chrome.
 
-**In a project that installs the package as a dev dependency**, puppeteer (a dependency of
-pa11y) may still download its own browser during `npm install`, because npm flattens the
-dependencies and puppeteer cannot see this package's [.puppeteerrc.cjs](.puppeteerrc.cjs). To
-skip it, set `PUPPETEER_SKIP_DOWNLOAD=true` for the install, or `puppeteer_skip_download=true` in
-the project's `.npmrc`; the tool then uses whichever browser the list above finds. A global
-install is not affected: it downloads nothing at install time.
+**Keep the browser outside the package.** By default the downloaded browser, and the profile
+folder each scan uses, live inside the installed package (`.cache/`). Upgrading a global install
+replaces that folder, so the next scan downloads 150 MB again, and a system-wide global install
+may not be writable at all. Point `A11Y_BROWSER_CACHE` at a folder of your own and both move
+there, kept across upgrades:
+
+```sh
+export A11Y_BROWSER_CACHE=~/.cache/a11y-crosscheck          # Bash, add it to your profile
+setx A11Y_BROWSER_CACHE "%LOCALAPPDATA%\a11y-crosscheck"     # Windows cmd, takes effect in new shells
+```
+
+```powershell
+[Environment]::SetEnvironmentVariable("A11Y_BROWSER_CACHE", "$env:LOCALAPPDATA\a11y-crosscheck", "User")
+```
+
+`a11y-crosscheck --install-browser` honours it too, so it can fill that folder ahead of time.
+
+**pa11y downloads a browser of its own at install**, because it depends on puppeteer, and that
+download is unused here: the tool brings its own. Installing the package alone, or with only
+axe-core or Lighthouse, downloads nothing. When you install pa11y (globally or in a project),
+set `PUPPETEER_SKIP_DOWNLOAD=true` for that install, or `puppeteer_skip_download=true` in the
+project's `.npmrc`; the tool then uses whichever browser the list above finds.
 
 ## What no scanner covers
 

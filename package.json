@@ -29,8 +29,7 @@
     "bin",
     "dist",
     "docs",
-    "examples/configs",
-    ".puppeteerrc.cjs"
+    "examples/configs"
   ],
   "scripts": {
     "scan": "npm run build --silent && node bin/a11y-crosscheck.mjs",
