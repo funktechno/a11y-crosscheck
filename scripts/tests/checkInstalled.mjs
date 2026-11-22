@@ -31,7 +31,8 @@ const pages: NonNullable<Config["pages"]> = ["/installed"];
 export default defineConfig({ pages });
 `
   );
-  const plan = await api.loadPlan([`--config=${path.join(dir, "a11y.config.mts")}`]);
+  // `installed` because this copy has no engines beside it, and a scan with none stops with an error.
+  const plan = await api.loadPlan([`--config=${path.join(dir, "a11y.config.mts")}`], { installed: ["axe"] });
   assert.deepEqual(plan.pages, ["/installed"]);
   console.log(`ok: ${pkg} exports the API and resolves its own name from a config outside node_modules`);
 } finally {

@@ -22,7 +22,7 @@ test("a config can import defineConfig from a package that is not installed: the
 export default defineConfig(({ args }) => ({ pages: [args.page ?? "/from-global"] }));`
   });
   t.after(cleanup);
-  const plan = await loadPlan([`--config=${path.join(dir, "a11y.config.mjs")}`]);
+  const plan = await loadPlan([`--config=${path.join(dir, "a11y.config.mjs")}`], { installed: ["axe"] });
   assert.deepEqual(plan.pages, ["/from-global"]);
 });
 

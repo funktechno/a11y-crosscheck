@@ -119,7 +119,14 @@ function themeScript(apply: Themes["apply"], theme: string): string | null {
   return null;
 }
 
-export async function loadPlan(argv: string[]): Promise<Plan> {
+/**
+ * @param options.installed the engines to treat as installed; defaults to looking them up. Lets a
+ *   script or a test load a config without the engines being there.
+ */
+export async function loadPlan(
+  argv: string[],
+  options: { installed?: EngineName[] } = {}
+): Promise<Plan> {
   const args = parseArgs(argv);
   const { file, config } = await readConfig(args);
 
@@ -140,7 +147,7 @@ export async function loadPlan(argv: string[]): Promise<Plan> {
     .replace(/[/\\]/g, "_")
     .replace(/[^A-Za-z0-9._-]/g, "_");
 
-  const engines = resolveEngines(args.only ? list(args.only) : null, installedEngines());
+  const engines = resolveEngines(args.only ? list(args.only) : null, options.installed ?? installedEngines());
 
   const pages = args.pages ? list(args.pages) : config.pages || ["/"];
 
