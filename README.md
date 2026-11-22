@@ -160,3 +160,7 @@ the same cache, so in practice the browser is already there after `npm install`.
 A clean scan says nothing about keyboard behaviour, whether focus can be seen, or what a screen
 reader announces. [docs/reading-results.md](docs/reading-results.md#what-a-scan-cannot-tell-you)
 says what to put alongside it.
+
+## License
+
+[MIT](LICENSE)

@@ -11,6 +11,7 @@
     "url": "https://github.com/lastlink/a11y-crosscheck/issues"
   },
   "author": "lastlink",
+  "license": "MIT",
   "type": "module",
   "bin": {
     "a11y-crosscheck": "bin/a11y-crosscheck.mjs"
