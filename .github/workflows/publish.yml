@@ -1,0 +1,119 @@
+name: Publish to npm
+
+# Publishes when a GitHub release is published (the release tag is the version), or by hand:
+# Actions > Publish to npm > Run workflow, where dry_run is ticked by default.
+#
+# The version is never edited by hand. GitVersion works it out from git (GitVersion.yml) and
+# scripts/version/updateVersion.sh stamps it into package.json:
+#   release / tag 0.2.0   -> 0.2.0
+#   run from main         -> MAJOR.MINOR.(newest tag patch + pull requests merged since that tag)
+#   `version` input       -> exactly that
+#
+# npm trusted publishing (OIDC, id-token: write): no npm token or secret. It needs a trusted
+# publisher on npmjs.com for this repository and this workflow file (publish.yml), which npm only
+# allows once the package exists, so the first version is published by hand. Until the repository
+# variable NPM_TRUSTED_PUBLISHING is set to true, every run is a dry run and says so.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry run: do everything except publish (npm publish --dry-run)"
+        type: boolean
+        default: true
+      version:
+        description: "Publish exactly this version (e.g. 0.2.0) instead of the GitVersion one"
+        type: string
+        default: ""
+      npm_tag:
+        description: "npm dist-tag (default: latest; prereleases default to next)"
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+  id-token: write   # trusted publishing and provenance
+
+concurrency:
+  group: publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    env:
+      DRY_RUN: ${{ github.event_name != 'release' && inputs.dry_run != false }}
+      CAN_PUBLISH: ${{ vars.NPM_TRUSTED_PUBLISHING == 'true' }}
+      NPM_TAG: ${{ inputs.npm_tag }}
+      PUPPETEER_SKIP_DOWNLOAD: "true"   # the published package fetches its own browser on install
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0       # GitVersion walks the whole history and the tags
+
+      # Publishing, dry runs included, only from main: a manual run must be started on main, and a
+      # release's tag must point at a commit on main.
+      - name: Only main may publish
+        run: |
+          if [[ "$GITHUB_EVENT_NAME" == "release" ]]; then
+            if ! git branch -r --contains "$GITHUB_SHA" --format='%(refname:short)' | grep -qx 'origin/main'; then
+              echo "::error::Release tag $GITHUB_REF_NAME is not on main."
+              exit 1
+            fi
+          elif [[ "$GITHUB_REF_NAME" != "main" ]]; then
+            echo "::error::Publishing only runs from main (got '$GITHUB_REF_NAME')."
+            exit 1
+          fi
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.x
+          registry-url: https://registry.npmjs.org
+          cache: npm
+      - name: Use npm >= 11.5.1 (trusted publishing)
+        run: npm install -g npm@^11.5.1
+
+      - uses: actions/setup-dotnet@v6     # only hosts the GitVersion tool
+        with:
+          dotnet-version: 10.0.x
+      - run: dotnet tool install --global GitVersion.Tool --version 6.8.2
+
+      - run: npm ci
+      - run: npm test
+
+      - name: Stamp the version
+        env:
+          VERSION_OVERRIDE: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.version }}
+        run: |
+          bash scripts/version/generateVersion.sh
+          bash scripts/version/updateVersion.sh
+
+      - name: Publish
+        env:
+          REPO_PRIVATE: ${{ github.event.repository.private }}
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          args=(--access public)
+          tag="$NPM_TAG"
+          if [[ -z "$tag" && "$version" == *-* ]]; then tag=next; fi
+          if [[ -n "$tag" ]]; then args+=(--tag "$tag"); fi
+
+          if [[ "$DRY_RUN" != "true" && "$CAN_PUBLISH" != "true" ]]; then
+            echo "::warning::NPM_TRUSTED_PUBLISHING is not true: npm publish runs as a dry run."
+            DRY_RUN=true
+          fi
+          if [[ "$DRY_RUN" == "true" ]]; then
+            args+=(--dry-run)
+          elif [[ "$REPO_PRIVATE" == "false" ]]; then
+            args+=(--provenance)   # provenance only works for public repositories
+          fi
+
+          echo "npm publish ${args[*]}  (version $version)"
+          npm publish "${args[@]}"
+
+          {
+            echo "### $([[ "$DRY_RUN" == "true" ]] && echo "Dry run" || echo "Published")"
+            echo "- package: \`a11y-crosscheck@$version\`"
+            echo "- dist-tag: \`${tag:-latest}\`"
+          } >> "$GITHUB_STEP_SUMMARY"

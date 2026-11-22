@@ -37,7 +37,7 @@ project's side is the same: an `a11y.config.mjs` and a `reports/` folder. Node 2
 
 | | Install | Run | Pick it when |
 | --- | --- | --- | --- |
-| **Global** (recommended) | `npm install -g git+https://github.com/lastlink/a11y-crosscheck.git` | `a11y-crosscheck` from any project folder | You scan regularly: one install, and one browser download, for every project |
+| **Global** (recommended) | `npm install -g git+https://github.com/funktechno/a11y-crosscheck.git` | `a11y-crosscheck` from any project folder | You scan regularly: one install, and one browser download, for every project |
 | **Vendored** | Copy `bin/`, `src/` and `.puppeteerrc.cjs` into your repo (say `scripts/a11y-crosscheck/`), then add `axe-core`, `pa11y` and `lighthouse` to your devDependencies | `node scripts/a11y-crosscheck/bin/a11y-crosscheck.mjs` | You want to change the scanner itself, or not install anything globally |
 
 The command always works on the folder it is run from: it reads `./a11y.config.mjs` and writes
@@ -160,3 +160,7 @@ the same cache, so in practice the browser is already there after `npm install`.
 A clean scan says nothing about keyboard behaviour, whether focus can be seen, or what a screen
 reader announces. [docs/reading-results.md](docs/reading-results.md#what-a-scan-cannot-tell-you)
 says what to put alongside it.
+
+## License
+
+[MIT](LICENSE)

@@ -1,0 +1,29 @@
+version: 2
+# Twice a month (the 1st and the 18th at 23:00), the same schedule as the other funktechno repos.
+# Majors are ignored and adopted on purpose (a new Node floor, a Lighthouse or pa11y line that
+# changes results). Each update is a pull request that runs .github/workflows/tests.yml.
+updates:
+  # axe-core, pa11y and Lighthouse. The engines decide what a scan reports, so a bump can turn a
+  # clean demo dirty: the e2e job in tests.yml is what catches that.
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "cron"
+      cronjob: "0 23 1,18 * *"
+    open-pull-requests-limit: 5
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "cron"
+      cronjob: "0 23 1,18 * *"
+    open-pull-requests-limit: 5
+    groups:
+      actions:
+        patterns: ["*"]
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
