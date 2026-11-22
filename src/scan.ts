@@ -4,22 +4,25 @@
  * commit or a deploy.
  */
 import path from "node:path";
-import { ensureBrowser } from "./browser.mjs";
-import { validateAcknowledged } from "./acknowledge.mjs";
-import { signIn } from "./session.mjs";
-import { createReporter } from "./report.mjs";
-import { runAxe } from "./engines/axe.mjs";
-import { runPa11y } from "./engines/pa11y.mjs";
-import { runLighthouse } from "./engines/lighthouse.mjs";
+import { ensureBrowser } from "./browser.ts";
+import { validateAcknowledged } from "./acknowledge.ts";
+import { signIn } from "./session.ts";
+import { createReporter } from "./report.ts";
+import { runAxe } from "./engines/axe.ts";
+import { runPa11y } from "./engines/pa11y.ts";
+import { runLighthouse } from "./engines/lighthouse.ts";
+import type { EngineResults, Plan } from "./types.ts";
+import type { Written } from "./report.ts";
 
-export async function scan(plan) {
+/** Runs the scan; resolves to the exit code: 0 clean, 1 when any engine reported something. */
+export async function scan(plan: Plan): Promise<number> {
   validateAcknowledged(plan.acknowledged);
   const browser = ensureBrowser({ quiet: true });
   const session = await signIn(plan);
   const report = createReporter(plan, browser);
-  const results = {};
-  const written = [];
-  const rel = (f) => path.relative(process.cwd(), f);
+  const results: EngineResults = {};
+  const written: Written[] = [];
+  const rel = (f: string) => path.relative(process.cwd(), f);
 
   console.log(`Config : ${plan.configFile ? rel(plan.configFile) : "none (pages as they are)"}`);
   console.log(`Browser: ${browser}`);
@@ -73,7 +76,7 @@ export async function scan(plan) {
     results.pa11y = await runPa11y(plan, browser, session);
     for (const p of plan.pages) {
       const r = results.pa11y[p];
-      if (r.error) {
+      if ("error" in r) {
         console.log(`  ${p.padEnd(22)} ERROR ${r.error}`);
         continue;
       }
@@ -81,7 +84,7 @@ export async function scan(plan) {
         `  ${p.padEnd(22)} ${r.issues.length} issue(s)` +
           (r.notReady ? "  (never matched `ready`; may be mid-render)" : "")
       );
-      const byCode = {};
+      const byCode: Record<string, number> = {};
       r.issues.forEach((i) => {
         byCode[i.code] = (byCode[i.code] || 0) + 1;
       });
@@ -95,7 +98,7 @@ export async function scan(plan) {
     results.lighthouse = await runLighthouse(plan, browser, session);
     for (const p of plan.pages) {
       const r = results.lighthouse[p];
-      if (r.error) {
+      if ("error" in r) {
         console.log(`  ${p.padEnd(22)} ERROR ${r.error}`);
         continue;
       }
@@ -114,8 +117,8 @@ export async function scan(plan) {
   console.log("\nReports written:");
   written.forEach((w) => console.log(`  ${rel(w.json)}\n  ${rel(w.html)}`));
 
-  const axeBad = Object.values(results.axe || {}).some((r) => r.violations?.length || r.unreachable);
-  const pa11yBad = Object.values(results.pa11y || {}).some((r) => r.issues?.length || r.error);
-  const lhBad = Object.values(results.lighthouse || {}).some((r) => r.failures?.length || r.error);
+  const axeBad = Object.values(results.axe || {}).some((r) => r.violations.length > 0 || r.unreachable);
+  const pa11yBad = Object.values(results.pa11y || {}).some((r) => "error" in r || r.issues.length > 0);
+  const lhBad = Object.values(results.lighthouse || {}).some((r) => "error" in r || r.failures.length > 0);
   return axeBad || pa11yBad || lhBad ? 1 : 0;
 }

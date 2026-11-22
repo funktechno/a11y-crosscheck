@@ -80,7 +80,10 @@ jobs:
       - run: dotnet tool install --global GitVersion.Tool --version 6.8.2
 
       - run: npm ci
+      - run: npm run typecheck
       - run: npm test
+      - run: npm run build
+      - run: npm run check:package
 
       - name: Stamp the version
         env:

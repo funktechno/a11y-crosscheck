@@ -13,29 +13,42 @@
   "author": "lastlink",
   "license": "MIT",
   "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
   "bin": {
     "a11y-crosscheck": "bin/a11y-crosscheck.mjs"
   },
   "files": [
     "bin",
-    "src",
+    "dist",
     "docs",
     "examples/configs",
     ".puppeteerrc.cjs"
   ],
   "scripts": {
-    "scan": "node bin/a11y-crosscheck.mjs",
+    "scan": "npm run build --silent && node bin/a11y-crosscheck.mjs",
     "browser:install": "node bin/a11y-crosscheck.mjs --install-browser",
-    "demo": "node examples/demo/run.mjs",
-    "demo:broken": "node examples/demo/run.mjs --broken",
+    "demo": "npm run build --silent && node examples/demo/run.mjs",
+    "demo:broken": "npm run build --silent && node examples/demo/run.mjs --broken",
     "demo:serve": "node examples/demo/serve.mjs",
-    "test": "node --test \"test/*.test.mjs\"",
-    "test:e2e": "node --test --test-timeout=900000 \"test/e2e/*.test.mjs\"",
-    "test:ci": "node --test --test-reporter=spec --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination=junit-unit.xml \"test/*.test.mjs\"",
-    "test:e2e:ci": "node --test --test-timeout=900000 --test-reporter=spec --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination=junit-e2e.xml \"test/e2e/*.test.mjs\"",
+    "test": "node --test \"test/*.test.ts\"",
+    "test:e2e": "npm run build --silent && node --test --test-timeout=900000 \"test/e2e/*.test.ts\"",
+    "test:ci": "node --test --test-reporter=spec --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination=junit-unit.xml \"test/*.test.ts\"",
+    "test:e2e:ci": "npm run build --silent && node --test --test-timeout=900000 --test-reporter=spec --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination=junit-e2e.xml \"test/e2e/*.test.ts\"",
     "version:generate": "bash scripts/version/generateVersion.sh",
     "version:update": "bash scripts/version/updateVersion.sh",
-    "version:reset": "bash scripts/version/resetVersion.sh"
+    "version:reset": "bash scripts/version/resetVersion.sh",
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.examples.json",
+    "prepare": "npm run build",
+    "check:package": "publint && attw --pack . --profile esm-only"
   },
   "keywords": [
     "accessibility",
@@ -46,14 +59,34 @@
     "lighthouse"
   ],
   "engines": {
-    "node": ">=22"
+    "node": ">=22.18"
   },
-  "dependencies": {
-    "axe-core": "^4.14.1",
+  "peerDependencies": {
+    "axe-core": "^4.10.2",
     "lighthouse": "^12.2.1",
     "pa11y": "^10.0.0"
   },
+  "peerDependenciesMeta": {
+    "axe-core": {
+      "optional": true
+    },
+    "lighthouse": {
+      "optional": true
+    },
+    "pa11y": {
+      "optional": true
+    }
+  },
   "publishConfig": {
     "access": "public"
+  },
+  "devDependencies": {
+    "@arethetypeswrong/cli": "^0.18.5",
+    "@types/node": "^22.20.5",
+    "axe-core": "^4.14.1",
+    "lighthouse": "^12.2.1",
+    "pa11y": "^10.0.0",
+    "publint": "^0.3.25",
+    "typescript": "^6.0.3"
   }
 }

@@ -3,10 +3,11 @@ import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { parseArgs, loadPlan, ALL_ENGINES } from "../src/config.mjs";
+import { parseArgs, loadPlan, resolveEngines, ALL_ENGINES } from "../src/config.ts";
+import { installedEngines } from "../src/engines/installed.ts";
 
 // A config in a temp dir, so no test reads an a11y.config.mjs that happens to sit in the cwd.
-function withConfig(source) {
+function withConfig(source: string) {
   const dir = mkdtempSync(path.join(tmpdir(), "a11y-config-"));
   const file = path.join(dir, "a11y.config.mjs");
   writeFileSync(file, source);
@@ -51,7 +52,7 @@ test("runs cover page x theme x viewport, plus states whose page is scanned", as
   const keys = plan.runs.map((r) => r.key);
   assert.equal(plan.runs.length, 2 * 2 * 2 + 1);
   assert.deepEqual(
-    [keys[0], keys[1], keys.at(-1), plan.runs.at(-1).theme, plan.runs.at(-1).viewport],
+    [keys[0], keys[1], keys.at(-1), plan.runs.at(-1)?.theme, plan.runs.at(-1)?.viewport],
     ["/", "/ [light, phone]", "/ <dialog>", "light", "desktop"]
   );
 });
@@ -81,7 +82,10 @@ test("unknown engines and viewports are refused", async () => {
 test("a password may contain ':'; the environment fills in what --login leaves out", async (t) => {
   const saved = { user: process.env.A11Y_USER, pass: process.env.A11Y_PASS };
   t.after(() => {
-    for (const [k, v] of [["A11Y_USER", saved.user], ["A11Y_PASS", saved.pass]]) {
+    for (const [k, v] of [
+      ["A11Y_USER", saved.user],
+      ["A11Y_PASS", saved.pass]
+    ] as const) {
       if (v === undefined) delete process.env[k];
       else process.env[k] = v;
     }
@@ -101,10 +105,10 @@ test("unknown flags reach the config as args, and theme scripts set localStorage
   t.after(cleanup);
   const plan = await loadPlan([`--config=${file}`, "--doc=a.pdf"]);
   assert.equal(plan.args.doc, "a.pdf");
-  assert.match(plan.themes.script("dark"), /localStorage\.setItem\("theme", "dark"\)/);
+  assert.match(String(plan.themes.script("dark")), /localStorage\.setItem\("theme", "dark"\)/);
 });
 
-test("without a config: one page, every engine, default axe rules", async () => {
+test("without a config: one page, every installed engine, default axe rules", async () => {
   await assert.rejects(
     loadPlan(["--config=" + path.join(tmpdir(), "a11y-does-not-exist.mjs")]),
     /config not found/
@@ -113,6 +117,18 @@ test("without a config: one page, every engine, default axe rules", async () => 
   const bare = await loadPlan([]);
   assert.deepEqual(
     [bare.pages, bare.engines, bare.axe.rules["label-content-name-mismatch"]?.enabled],
-    [["/"], ALL_ENGINES, true]
+    [["/"], installedEngines(), true]
   );
+});
+
+test("engines are optional: the default is whatever is installed, and a missing one says what to install", () => {
+  assert.deepEqual(resolveEngines(null, ["axe", "lighthouse"]), ["axe", "lighthouse"]);
+  assert.deepEqual(resolveEngines(["pa11y"], ALL_ENGINES), ["pa11y"]);
+  assert.throws(() => resolveEngines(["pa11y", "axe"], ["axe"]), /not installed: pa11y\. Install pa11y next to a11y-crosscheck/);
+  assert.throws(() => resolveEngines(null, []), /no engines are installed.*npm install -g axe-core pa11y lighthouse/);
+  assert.throws(() => resolveEngines(["wave"], ALL_ENGINES), /unknown engine\(s\): wave/);
+});
+
+test("the engines this repo develops against are all found", () => {
+  assert.deepEqual(installedEngines(), ALL_ENGINES);
 });

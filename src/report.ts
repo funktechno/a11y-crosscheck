@@ -9,12 +9,34 @@
  */
 import { writeFileSync, mkdirSync } from "node:fs";
 import path from "node:path";
+import type {
+  AxeRunResult,
+  EngineName,
+  EngineResults,
+  LighthousePageResult,
+  Pa11yPageResult,
+  Plan
+} from "./types.ts";
 
-const esc = (v) =>
-  String(v).replace(
-    /[&<>"']/g,
-    (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]
-  );
+const ESCAPES: Record<string, string> = {
+  "&": "&amp;",
+  "<": "&lt;",
+  ">": "&gt;",
+  '"': "&quot;",
+  "'": "&#39;"
+};
+const esc = (v: unknown): string => String(v).replace(/[&<>"']/g, (c) => ESCAPES[c]);
+
+/** Where one report pair was written. */
+export interface Written {
+  json: string;
+  html: string;
+}
+
+export interface Reporter {
+  engine<E extends EngineName>(engine: E, results: NonNullable<EngineResults[E]>): Written;
+  summary(results: EngineResults): Written;
+}
 
 const CSS = `
 :root{--ok:#0f7b3d;--bad:#b42318;--warn:#8a5a00;--line:#dbe3ed;--muted:#5b6473}
@@ -44,12 +66,12 @@ ul{margin:.25rem 0 .25rem 1.1rem;padding:0}
 footer{color:var(--muted);font-size:.85rem;margin-top:2rem}
 `;
 
-export function createReporter(plan, browser) {
+export function createReporter(plan: Plan, browser: string): Reporter {
   const { base, pages, runs, out, site, stamp, engines } = plan;
   /** axe reports per run (page x theme x viewport, plus states); the other engines per page. */
   const axeKeys = runs.map((r) => r.key);
 
-  function page(title, bodyHtml) {
+  function page(title: string, bodyHtml: string): string {
     return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -60,7 +82,13 @@ ${bodyHtml}
 `;
   }
 
-  function write(dir, name, title, data, bodyHtml) {
+  function write(
+    dir: string,
+    name: string,
+    title: string,
+    data: object,
+    bodyHtml: string
+  ): Written {
     mkdirSync(dir, { recursive: true });
     const file = path.join(dir, name);
     writeFileSync(
@@ -75,7 +103,7 @@ ${bodyHtml}
     return { json: `${file}.json`, html: `${file}.html` };
   }
 
-  function axeHtml(data) {
+  function axeHtml(data: Record<string, AxeRunResult>): string {
     const rows = axeKeys
       .map((p) => {
         const r = data[p];
@@ -160,12 +188,12 @@ ${bodyHtml}
 ${secs}`;
   }
 
-  function pa11yHtml(data) {
+  function pa11yHtml(data: Record<string, Pa11yPageResult>): string {
     const rows = pages
       .map((p) => {
         const r = data[p];
         if (!r) return "";
-        if (r.error)
+        if ("error" in r)
           return `<tr><th scope="row"><code>${esc(p)}</code></th><td class="bad" colspan="2">${esc(r.error)}</td></tr>`;
         const errs = r.issues.filter((i) => i.type === "error").length;
         return `<tr><th scope="row"><code>${esc(p)}</code></th>
@@ -176,7 +204,7 @@ ${secs}`;
     const secs = pages
       .map((p) => {
         const r = data[p];
-        if (!r || r.error || !r.issues.length) return "";
+        if (!r || "error" in r || !r.issues.length) return "";
         return (
           `<section><h3><code>${esc(p)}</code></h3><ul>` +
           r.issues
@@ -190,8 +218,8 @@ ${secs}`;
         );
       })
       .join("\n");
-    const total = pages.reduce((s, p) => s + (data[p]?.issues?.length || 0), 0);
-    const anyErr = pages.some((p) => data[p]?.error);
+    const total = pages.reduce((s, p) => s + (data[p] && "issues" in data[p] ? data[p].issues.length : 0), 0);
+    const anyErr = pages.some((p) => data[p] && "error" in data[p]);
     return `<h1>pa11y</h1>
 <p class="meta">${esc(new Date().toISOString())} &middot; HTML_CodeSniffer, standard ${esc(plan.pa11y.standard)}</p>
 <div class="verdict ${total || anyErr ? "dirty" : "clean"}">${anyErr ? "Some pages failed to run - see the table." : total ? `${total} issue(s) across ${pages.length} pages.` : `No issues across ${pages.length} pages.`}</div>
@@ -199,12 +227,12 @@ ${secs}`;
 ${secs}`;
   }
 
-  function lighthouseHtml(data) {
+  function lighthouseHtml(data: Record<string, LighthousePageResult>): string {
     const rows = pages
       .map((p) => {
         const r = data[p];
         if (!r) return "";
-        if (r.error)
+        if ("error" in r)
           return `<tr><th scope="row"><code>${esc(p)}</code></th><td class="bad" colspan="2">${esc(r.error)}</td></tr>`;
         return `<tr><th scope="row"><code>${esc(p)}</code></th>
       <td class="${r.score === 100 ? "ok" : "bad"}">${r.score}</td>
@@ -214,7 +242,7 @@ ${secs}`;
     const secs = pages
       .map((p) => {
         const r = data[p];
-        if (!r || r.error || !r.failures.length) return "";
+        if (!r || "error" in r || !r.failures.length) return "";
         return (
           `<section><h3><code>${esc(p)}</code> <span class="tag">score ${r.score}</span></h3><ul>` +
           r.failures
@@ -231,7 +259,10 @@ ${secs}`;
         );
       })
       .join("\n");
-    const scores = pages.map((p) => data[p]?.score).filter((s) => typeof s === "number");
+    const scores = pages.flatMap((p) => {
+      const r = data[p];
+      return r && "score" in r ? [r.score] : [];
+    });
     const min = scores.length ? Math.min(...scores) : null;
     return `<h1>Lighthouse</h1>
 <p class="meta">${esc(new Date().toISOString())} &middot; accessibility category only</p>
@@ -240,7 +271,7 @@ ${secs}`;
 ${secs}`;
   }
 
-  function summaryHtml(results) {
+  function summaryHtml(results: EngineResults): string {
     // Every row axe produced, plus any page only the other two covered.
     const keys = [...new Set([...axeKeys, ...pages])];
     const rows = keys
@@ -258,21 +289,23 @@ ${secs}`;
             }</td>`
           : '<td class="na">-</td>'
       }
-      ${q ? (q.error ? '<td class="bad">error</td>' : `<td class="${q.issues.length ? "bad" : "ok"}">${q.issues.length}</td>`) : '<td class="na">not run</td>'}
-      ${l ? (l.error ? '<td class="bad">error</td>' : `<td class="${l.score === 100 ? "ok" : "bad"}">${l.score}</td>`) : '<td class="na">not run</td>'}
+      ${q ? ("error" in q ? '<td class="bad">error</td>' : `<td class="${q.issues.length ? "bad" : "ok"}">${q.issues.length}</td>`) : '<td class="na">not run</td>'}
+      ${l ? ("error" in l ? '<td class="bad">error</td>' : `<td class="${l.score === 100 ? "ok" : "bad"}">${l.score}</td>`) : '<td class="na">not run</td>'}
     </tr>`;
       })
       .join("\n");
 
-    const axeRules = new Set(),
-      lhRules = new Set(),
-      paCodes = new Set();
+    const axeRules = new Set<string>(),
+      lhRules = new Set<string>(),
+      paCodes = new Set<string>();
     axeKeys.forEach((p) => results.axe?.[p]?.violations.forEach((v) => axeRules.add(v.id)));
     pages.forEach((p) => {
-      results.lighthouse?.[p]?.failures?.forEach((f) => lhRules.add(f.id));
-      results.pa11y?.[p]?.issues?.forEach((i) => paCodes.add(i.code));
+      const lh = results.lighthouse?.[p];
+      if (lh && "failures" in lh) lh.failures.forEach((f) => lhRules.add(f.id));
+      const pa = results.pa11y?.[p];
+      if (pa && "issues" in pa) pa.issues.forEach((i) => paCodes.add(i.code));
     });
-    const list = (s) =>
+    const list = (s: Set<string>): string =>
       s.size
         ? [...s]
             .sort()
@@ -296,7 +329,11 @@ subset of axe's - Lighthouse runs a curated rule list and weights it into a scor
 HTML_CodeSniffer, a separate implementation, so it can disagree with both in either direction.</p>`;
   }
 
-  const html = { axe: axeHtml, pa11y: pa11yHtml, lighthouse: lighthouseHtml };
+  const html: { [E in EngineName]: (data: NonNullable<EngineResults[E]>) => string } = {
+    axe: axeHtml,
+    pa11y: pa11yHtml,
+    lighthouse: lighthouseHtml
+  };
   const name = `${site}-${stamp}`;
 
   return {

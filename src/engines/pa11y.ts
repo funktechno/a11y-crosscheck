@@ -6,12 +6,17 @@
  * app itself, then hands pa11y the rendered page (`ignoreUrl`): pa11y's own navigation stops at
  * the load event, which for a single-page app is the empty shell.
  */
-import { launch, preparePage, puppeteerFor, waitForApp } from "../puppeteer.mjs";
+import { launch, preparePage, puppeteerFor, waitForApp } from "../puppeteer.ts";
+import type { Pa11yPageResult, Plan, ResolvedSession } from "../types.ts";
 
-export async function runPa11y(plan, executablePath, session) {
+export async function runPa11y(
+  plan: Plan,
+  executablePath: string,
+  session: ResolvedSession | null
+): Promise<Record<string, Pa11yPageResult>> {
   const pa11y = (await import("pa11y")).default;
   const browser = await launch(puppeteerFor("pa11y", "puppeteer"), executablePath);
-  const out = {};
+  const out: Record<string, Pa11yPageResult> = {};
   try {
     for (const p of plan.pages) {
       const url = plan.base + p;
@@ -40,7 +45,7 @@ export async function runPa11y(plan, executablePath, session) {
         };
       } catch (e) {
         out[p] = {
-          error: String(e.message || e)
+          error: String(e instanceof Error ? e.message : e)
             .split("\n")[0]
             .slice(0, 200)
         };

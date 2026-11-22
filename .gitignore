@@ -34,3 +34,6 @@ archive/
 version-*.txt
 *.tgz
 junit-*.xml
+
+# TypeScript build output
+dist/

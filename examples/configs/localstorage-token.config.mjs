@@ -2,7 +2,9 @@
  * An app that keeps its access token in localStorage and sends it as a bearer header, follows
  * the OS colour scheme rather than offering a picker, and marks itself ready explicitly.
  */
-export default {
+import { defineConfig } from "a11y-crosscheck";
+
+export default defineConfig({
   baseUrl: "http://localhost:3000",
   pages: ["/", "/dashboard", "/reports", "/settings/profile"],
 
@@ -28,7 +30,7 @@ export default {
         body: new URLSearchParams({ grant_type: "password", username: user, password: pass })
       });
       if (!res.ok) throw new Error(`sign-in failed: ${res.status}`);
-      const { access_token } = await res.json();
+      const { access_token } = /** @type {{ access_token: string }} */ (await res.json());
       return {
         // what the app reads on boot -- reaches the axe run only
         localStorage: { "auth.token": access_token },
@@ -43,4 +45,4 @@ export default {
 
   // HTML_CodeSniffer's AAA set, for a team that has cleared AA.
   pa11y: { standard: "WCAG2AAA" }
-};
+});

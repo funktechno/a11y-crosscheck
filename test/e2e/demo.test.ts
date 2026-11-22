@@ -1,6 +1,6 @@
 // End to end: the demo app, scanned by all three engines in a real Chromium. Slow (a minute or
 // two), so it is `npm run test:e2e`, not part of `npm test`.
-import { test } from "node:test";
+import { test, type TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { existsSync, readdirSync, mkdtempSync, rmSync } from "node:fs";
@@ -12,7 +12,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", ".
 const DEMO = path.join(ROOT, "examples", "demo", "run.mjs");
 const TIMEOUT = 10 * 60 * 1000;
 
-function demo(t, ...flags) {
+function demo(t: TestContext, ...flags: string[]) {
   const out = mkdtempSync(path.join(tmpdir(), "a11y-e2e-"));
   t.after(() => rmSync(out, { recursive: true, force: true }));
   const r = spawnSync(process.execPath, [DEMO, `--out=${out}`, ...flags], {
@@ -25,7 +25,7 @@ function demo(t, ...flags) {
   return { status: r.status, stdout: r.stdout, out };
 }
 
-const reports = (out) =>
+const reports = (out: string) =>
   ["axe", "pa11y", "lighthouse"].map((e) =>
     existsSync(path.join(out, e)) ? readdirSync(path.join(out, e)).filter((f) => f.endsWith(".json")).length : 0
   );

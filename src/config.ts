@@ -12,13 +12,18 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { allowSelfImport } from "./resolve.ts";
+import { enginePackage, installedEngines } from "./engines/installed.ts";
+import type { Args, Config, ConfigModule, EngineName, Plan, Themes, Viewport } from "./types.ts";
 
-export const ALL_ENGINES = ["axe", "pa11y", "lighthouse"];
+/** Every engine the tool knows. Which of them run is `resolveEngines`: the installed ones. */
+export const ALL_ENGINES: EngineName[] = ["axe", "pa11y", "lighthouse"];
 
-const CONFIG_NAMES = ["a11y.config.mjs", "a11y.config.js"];
+// .mts and .ts load through Node's built-in type stripping (22.18+); .mts needs no package "type".
+const CONFIG_NAMES = ["a11y.config.mjs", "a11y.config.mts", "a11y.config.ts", "a11y.config.js"];
 
 /** 1366x900 is a laptop; 390x844 is a phone in portrait, where layouts genuinely differ. */
-const DEFAULT_VIEWPORTS = {
+const DEFAULT_VIEWPORTS: Record<string, Viewport> = {
   desktop: { width: 1366, height: 900, mobile: false },
   phone: { width: 390, height: 844, mobile: true }
 };
@@ -34,13 +39,42 @@ const DEFAULT_AXE_TAGS = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"
  * Lighthouse turns it on. Where Lighthouse cannot reach a route (signed-in pages, dialogs),
  * nothing would check the rule there without this.
  */
-const DEFAULT_AXE_RULES = { "label-content-name-mismatch": { enabled: true } };
+const DEFAULT_AXE_RULES: Record<string, { enabled?: boolean }> = { "label-content-name-mismatch": { enabled: true } };
+
+/**
+ * Which engines a scan runs. The engines are optional peer dependencies, so the default is every
+ * engine that is installed, and asking for one that is not (or having none) is an error that says
+ * what to install, rather than a failure deep inside a scan.
+ *
+ * @param requested the `--only` list, or null for "whatever is installed"
+ */
+export function resolveEngines(requested: string[] | null, installed: EngineName[]): EngineName[] {
+  const unknown = (requested ?? []).filter((e) => !ALL_ENGINES.includes(e as EngineName));
+  if (unknown.length) throw new Error(`unknown engine(s): ${unknown.join(", ")}`);
+  const engines = (requested ?? installed) as EngineName[];
+  const missing = engines.filter((e) => !installed.includes(e));
+  if (missing.length) {
+    throw new Error(
+      `engine(s) not installed: ${missing.join(", ")}. Install ${missing.map(enginePackage).join(" ")} ` +
+        "next to a11y-crosscheck: `npm install -g " + missing.map(enginePackage).join(" ") + "` for a global " +
+        "install, or `npm install -D " + missing.map(enginePackage).join(" ") + "` in the project."
+    );
+  }
+  if (!engines.length) {
+    throw new Error(
+      "no engines are installed. a11y-crosscheck runs axe-core, pa11y and Lighthouse, and installs none " +
+        "of them itself. Install the ones you want, e.g. `npm install -g axe-core pa11y lighthouse` " +
+        "(`npm install -D` in a project)."
+    );
+  }
+  return engines;
+}
 
 /**
  * Split argv into flags. Splits on the first "=" only: a route can carry its own query string
  * (`--pages=/viewer/?doc=a.pdf`), and splitting on every one cuts it down to `/viewer/?doc`.
  */
-export function parseArgs(argv) {
+export function parseArgs(argv: string[]): Args {
   return Object.fromEntries(
     argv.map((a) => {
       const flag = a.replace(/^--/, "");
@@ -50,13 +84,13 @@ export function parseArgs(argv) {
   );
 }
 
-const list = (v) =>
+const list = (v: unknown): string[] =>
   String(v)
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean);
 
-async function readConfig(args) {
+async function readConfig(args: Args): Promise<{ file: string | null; config: Config }> {
   const explicit = typeof args.config === "string" ? path.resolve(args.config) : null;
   const file = explicit || CONFIG_NAMES.map((n) => path.resolve(n)).find((f) => existsSync(f));
   if (!file) {
@@ -65,8 +99,9 @@ async function readConfig(args) {
     return { file: null, config: {} };
   }
   if (!existsSync(file)) throw new Error(`config not found: ${file}`);
-  const mod = await import(pathToFileURL(file).href);
-  const exported = mod.default ?? mod;
+  allowSelfImport(); // so the config can `import { defineConfig } from "a11y-crosscheck"` under a global install
+  const mod = (await import(pathToFileURL(file).href)) as { default?: ConfigModule } & Config;
+  const exported: ConfigModule = mod.default ?? mod;
   const config = typeof exported === "function" ? await exported({ args }) : exported;
   return { file, config: config || {} };
 }
@@ -75,16 +110,23 @@ async function readConfig(args) {
  * How a theme is applied before the app boots. Returns the source of a script that runs at
  * the start of every document, or null when the theme is applied another way (emulated media).
  */
-function themeScript(apply, theme) {
+function themeScript(apply: Themes["apply"], theme: string): string | null {
   if (!apply) return null;
   if (typeof apply === "function") return apply(theme);
-  if (apply.localStorage) {
+  if (typeof apply === "object") {
     return `try { localStorage.setItem(${JSON.stringify(apply.localStorage)}, ${JSON.stringify(theme)}); } catch {}`;
   }
   return null;
 }
 
-export async function loadPlan(argv) {
+/**
+ * @param options.installed the engines to treat as installed; defaults to looking them up. Lets a
+ *   script or a test load a config without the engines being there.
+ */
+export async function loadPlan(
+  argv: string[],
+  options: { installed?: EngineName[] } = {}
+): Promise<Plan> {
   const args = parseArgs(argv);
   const { file, config } = await readConfig(args);
 
@@ -105,9 +147,7 @@ export async function loadPlan(argv) {
     .replace(/[/\\]/g, "_")
     .replace(/[^A-Za-z0-9._-]/g, "_");
 
-  const engines = args.only ? list(args.only) : ALL_ENGINES;
-  const unknown = engines.filter((e) => !ALL_ENGINES.includes(e));
-  if (unknown.length) throw new Error(`unknown engine(s): ${unknown.join(", ")}`);
+  const engines = resolveEngines(args.only ? list(args.only) : null, options.installed ?? installedEngines());
 
   const pages = args.pages ? list(args.pages) : config.pages || ["/"];
 
@@ -129,7 +169,7 @@ export async function loadPlan(argv) {
 
   const states = args.states === "off" ? [] : config.states || [];
 
-  const runs = [];
+  const runs: Plan["runs"] = [];
   for (const page of pages) {
     for (const theme of themeValues) {
       for (const viewport of viewportNames) {

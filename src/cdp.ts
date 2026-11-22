@@ -2,14 +2,29 @@
  * A headless Chromium driven directly over the DevTools Protocol -- no puppeteer -- so the axe
  * run can plant a session, choose a theme before the app boots, and click its way into dialogs.
  */
-import { spawn } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 import path from "node:path";
-import { readyExpression } from "./boot.mjs";
-import { TOOL_ROOT } from "./browser.mjs";
+import { readyExpression } from "./boot.ts";
+import type { Plan } from "./types.ts";
+import { TOOL_ROOT } from "./browser.ts";
 
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-export async function launchCdp(browser, port = 9333) {
+/** One entry of the browser's /json/list. */
+interface CdpTarget {
+  type: string;
+  webSocketDebuggerUrl?: string;
+}
+
+interface Pending {
+  resolve: (value: unknown) => void;
+  reject: (reason: Error) => void;
+}
+
+export async function launchCdp(
+  browser: string,
+  port = 9333
+): Promise<{ proc: ChildProcess; wsUrl: string }> {
   const proc = spawn(
     browser,
     [
@@ -26,12 +41,13 @@ export async function launchCdp(browser, port = 9333) {
   );
 
   for (let i = 0; i < 80; i++) {
-    const list = await fetch(`http://127.0.0.1:${port}/json/list`)
+    const list = (await fetch(`http://127.0.0.1:${port}/json/list`)
       .then((x) => x.json())
-      .catch(() => null);
-    const page =
-      Array.isArray(list) && list.find((t) => t.type === "page" && t.webSocketDebuggerUrl);
-    if (page) return { proc, wsUrl: page.webSocketDebuggerUrl };
+      .catch(() => null)) as CdpTarget[] | null;
+    const wsUrl = Array.isArray(list)
+      ? list.find((t) => t.type === "page" && t.webSocketDebuggerUrl)?.webSocketDebuggerUrl
+      : undefined;
+    if (wsUrl) return { proc, wsUrl };
     await sleep(250);
   }
   proc.kill();
@@ -39,26 +55,26 @@ export async function launchCdp(browser, port = 9333) {
 }
 
 export class Cdp {
-  /**
-   * @param {WebSocket} ws
-   * @param {object} ready  the plan's `ready` block: what "this route has rendered" means
-   */
-  constructor(ws, ready) {
+  private id = 0;
+  private pending = new Map<number, Pending>();
+  private ws: WebSocket;
+  /** The plan's `ready` block: what "this route has rendered" means. */
+  private ready: Plan["ready"];
+
+  constructor(ws: WebSocket, ready: Plan["ready"]) {
     this.ws = ws;
     this.ready = ready;
-    this.id = 0;
-    this.pending = new Map();
     ws.addEventListener("message", (e) => {
-      const m = JSON.parse(e.data);
-      const entry = m.id && this.pending.get(m.id);
-      if (!entry) return;
+      const m = JSON.parse(String(e.data)) as { id?: number; result?: unknown; error?: unknown };
+      const entry = m.id ? this.pending.get(m.id) : undefined;
+      if (!m.id || !entry) return;
       this.pending.delete(m.id);
       if (m.error) entry.reject(new Error(JSON.stringify(m.error)));
       else entry.resolve(m.result);
     });
   }
 
-  static async connect(wsUrl, ready) {
+  static async connect(wsUrl: string, ready: Plan["ready"]): Promise<Cdp> {
     const ws = new WebSocket(wsUrl);
     await new Promise((res, rej) => {
       ws.addEventListener("open", res);
@@ -67,20 +83,23 @@ export class Cdp {
     return new Cdp(ws, ready);
   }
 
-  close() {
+  close(): void {
     this.ws.close();
   }
 
-  send(method, params = {}) {
+  send<T = unknown>(method: string, params: object = {}): Promise<T> {
     const id = ++this.id;
-    return new Promise((resolve, reject) => {
-      this.pending.set(id, { resolve, reject });
+    return new Promise<T>((resolve, reject) => {
+      this.pending.set(id, { resolve: resolve as (v: unknown) => void, reject });
       this.ws.send(JSON.stringify({ id, method, params }));
     });
   }
 
-  async eval(expression) {
-    const r = await this.send("Runtime.evaluate", {
+  async eval<T = unknown>(expression: string): Promise<T> {
+    const r = await this.send<{
+      result: { value: T };
+      exceptionDetails?: { text: string; exception?: { description?: string } };
+    }>("Runtime.evaluate", {
       expression,
       returnByValue: true,
       awaitPromise: true
@@ -91,7 +110,7 @@ export class Cdp {
     return r.result.value;
   }
 
-  async goto(url) {
+  async goto(url: string): Promise<boolean> {
     await this.send("Page.navigate", { url });
     for (let i = 0; i < 80; i++) {
       if ((await this.eval("document.readyState").catch(() => null)) === "complete") break;
@@ -107,9 +126,9 @@ export class Cdp {
    * `el.click()` on a disabled button does nothing at all -- silently, so the step "succeeds"
    * and the state never opens.
    */
-  async click(selector, tries = 40) {
+  async click(selector: string, tries = 40): Promise<boolean> {
     for (let i = 0; i < tries; i++) {
-      const clicked = await this.eval(
+      const clicked = await this.eval<boolean>(
         `(() => {
           const el = document.querySelector(${JSON.stringify(selector)});
           if (!el || el.disabled || el.getAttribute('aria-disabled') === 'true') return false;
@@ -124,9 +143,9 @@ export class Cdp {
   }
 
   /** Polls for a selector to exist. Returns false rather than throwing when it never does. */
-  async waitForSelector(selector, tries = 40) {
+  async waitForSelector(selector: string, tries = 40): Promise<boolean> {
     for (let i = 0; i < tries; i++) {
-      const there = await this.eval(`!!document.querySelector(${JSON.stringify(selector)})`).catch(
+      const there = await this.eval<boolean>(`!!document.querySelector(${JSON.stringify(selector)})`).catch(
         () => false
       );
       if (there) return true;
@@ -139,12 +158,12 @@ export class Cdp {
    * Waits for the app to have rendered something worth auditing (see readyExpression), then
    * settles, because views fetch on mount and paint a skeleton first. Says whether it got there.
    */
-  async waitForApp() {
+  async waitForApp(): Promise<boolean> {
     const { settleMs, timeoutMs } = this.ready;
     const expression = readyExpression(this.ready);
     let ready = false;
     for (let waited = 0; waited < timeoutMs; waited += 250) {
-      ready = await this.eval(expression).catch(() => false);
+      ready = await this.eval<boolean>(expression).catch(() => false);
       if (ready) break;
       await sleep(250);
     }
