@@ -4,11 +4,11 @@
   "description": "Accessibility scans with three independent engines (axe-core, pa11y, Lighthouse), wired to a real app: SPA readiness, sign-in, themes, viewports and dialogs.",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/lastlink/a11y-crosscheck.git"
+    "url": "git+https://github.com/funktechno/a11y-crosscheck.git"
   },
-  "homepage": "https://github.com/lastlink/a11y-crosscheck#readme",
+  "homepage": "https://github.com/funktechno/a11y-crosscheck#readme",
   "bugs": {
-    "url": "https://github.com/lastlink/a11y-crosscheck/issues"
+    "url": "https://github.com/funktechno/a11y-crosscheck/issues"
   },
   "author": "lastlink",
   "license": "MIT",
