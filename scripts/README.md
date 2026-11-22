@@ -23,8 +23,15 @@ pwsh scripts/version/generateVersion.ps1; pwsh scripts/version/updateVersion.ps1
 pwsh scripts/version/resetVersion.ps1    # before committing
 ```
 
+## build
+
+| Script | Platform | Called by | What it does |
+| --- | --- | --- | --- |
+| `cleanManifest.mjs strip\|restore` | any | the `prepack` / `postpack` npm hooks | **Changes the tree** between the two. `strip` backs up `package.json` (`.cache/package.json.orig`) and removes `devDependencies` so they are not published; `restore` puts it back byte for byte. A pack killed in between is repaired by the next `strip` or a manual `restore` |
+
 ## tests
 
 | Script | Platform | Called by | What it does |
 | --- | --- | --- | --- |
 | `checkInstalled.mjs <package folder>` | any | `tests.yml` (pack-and-install step) | Read-only. Imports an installed copy's public API and loads a `.mts` config that imports `defineConfig` from `a11y-crosscheck` with the package not resolvable from the config's folder, as under a global install |
+| `checkPacked.mjs <tarball>` | any | `tests.yml` (pack-and-install step) | Read-only. Checks a packed tarball's manifest has no `devDependencies` and that packing left `package.json` as committed |
